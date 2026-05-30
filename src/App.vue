@@ -26,12 +26,10 @@
           </div>
         </div>
         <nav class="header-actions">
-          <button class="admin-toggle" @click="showAdmin = true" title="Admin Panel">
-            ⚙️
-          </button>
-          <!-- FIX: cart-badge fuera del flujo para que z-index funcione; color explícito en spans -->
+          <button class="admin-toggle" @click="showAdmin = true" title="Admin Panel">⚙️</button>
+          <!-- CARRITO FIJO: siempre visible, sticky en el header -->
           <div class="cart-btn-wrap">
-            <button class="cart-btn" @click="showCart = true">
+            <button class="cart-btn" @click="showCart = !showCart">
               <span class="cart-icon">🛒</span>
               <span class="cart-label">Mi Pedido</span>
             </button>
@@ -101,7 +99,7 @@
           >
             <div class="card-img">
               <img
-                :src="p.image || getPlaceholderImg(p.emoji, p.name)"
+                :src="p.image || getFallbackImg(p)"
                 :alt="p.name"
                 class="card-photo"
                 @error="handleImgError($event, p)"
@@ -111,14 +109,19 @@
             <div class="card-body">
               <h3 class="card-name">{{ p.name }}</h3>
               <p class="card-desc">{{ p.desc }}</p>
-              <!-- FIX: @click.stop en el contenedor del footer para evitar abrir detalle -->
+              <!-- FIX RESPONSIVE: footer siempre visible con layout flex-wrap -->
               <div class="card-foot" @click.stop>
                 <span class="card-price">${{ fmt(p.price) }}</span>
-                <!-- FIX: qty-row con colores hardcodeados para evitar problema de scoped :root -->
                 <div v-if="getQty(p.id) > 0" class="qty-row">
                   <button class="qty-btn" @click.stop="dec(p.id)">−</button>
                   <span class="qty-val">{{ getQty(p.id) }}</span>
-                  <button class="qty-btn" @click.stop="inc(p)">+</button>
+                  <!-- TOPE 5: mostrar indicador si llegó al límite -->
+                  <button
+                    class="qty-btn"
+                    :class="{ 'qty-btn-max': getQty(p.id) >= MAX_QTY }"
+                    @click.stop="inc(p)"
+                    :disabled="getQty(p.id) >= MAX_QTY"
+                  >+</button>
                 </div>
                 <button v-else class="add-btn" @click.stop="inc(p)">+ Agregar</button>
               </div>
@@ -135,7 +138,7 @@
           <button class="x-btn detail-close" @click="detailProduct = null">✕</button>
           <div class="detail-img-wrap">
             <img
-              :src="detailProduct.image || getPlaceholderImg(detailProduct.emoji, detailProduct.name)"
+              :src="detailProduct.image || getFallbackImg(detailProduct)"
               :alt="detailProduct.name"
               class="detail-photo"
               @error="handleImgError($event, detailProduct)"
@@ -162,18 +165,25 @@
               <div v-if="getQty(detailProduct.id) > 0" class="qty-row lg">
                 <button class="qty-btn lg" @click="dec(detailProduct.id)">−</button>
                 <span class="qty-val lg">{{ getQty(detailProduct.id) }}</span>
-                <button class="qty-btn lg" @click="inc(detailProduct)">+</button>
+                <button
+                  class="qty-btn lg"
+                  :class="{ 'qty-btn-max': getQty(detailProduct.id) >= MAX_QTY }"
+                  @click="inc(detailProduct)"
+                  :disabled="getQty(detailProduct.id) >= MAX_QTY"
+                >+</button>
               </div>
               <button v-else class="cta-btn" @click="inc(detailProduct); detailProduct = null">
                 🛒 Agregar al pedido
               </button>
             </div>
+            <!-- TOPE indicador -->
+            <p v-if="getQty(detailProduct.id) >= MAX_QTY" class="max-qty-msg">⚠️ Máximo {{ MAX_QTY }} unidades por producto</p>
           </div>
         </div>
       </div>
     </transition>
 
-    <!-- CART DROPDOWN (cae desde el botón, siempre accesible al hacer scroll) -->
+    <!-- CARRITO FLOTANTE FIJO - siempre visible al hacer scroll -->
     <transition name="cart-overlay">
       <div v-if="showCart" class="cart-backdrop" @click="showCart = false"></div>
     </transition>
@@ -194,7 +204,7 @@
             <div v-for="item in cart" :key="item.id" class="cart-item">
               <div class="ci-img-wrap">
                 <img
-                  :src="item.image || getPlaceholderImg(item.emoji, item.name)"
+                  :src="item.image || getEmojiImg(item.emoji)"
                   :alt="item.name"
                   class="ci-img"
                   @error="$event.target.src = getEmojiImg(item.emoji)"
@@ -206,7 +216,12 @@
                   <div class="qty-row sm">
                     <button class="qty-btn" @click="dec(item.id)">−</button>
                     <span class="qty-val">{{ item.qty }}</span>
-                    <button class="qty-btn" @click="inc(item)">+</button>
+                    <button
+                      class="qty-btn"
+                      :class="{ 'qty-btn-max': item.qty >= MAX_QTY }"
+                      @click="inc(item)"
+                      :disabled="item.qty >= MAX_QTY"
+                    >+</button>
                   </div>
                   <span class="ci-total">${{ fmt(item.price * item.qty) }}</span>
                 </div>
@@ -262,23 +277,13 @@
                 <input v-model.trim="form.tel" :class="{ err: errors.tel }" placeholder="3001234567" maxlength="10" @input="clearErr('tel')" />
                 <span v-if="errors.tel" class="err-msg">{{ errors.tel }}</span>
               </div>
-              <!-- FIX: Tipo de entrega simplificado -->
               <div class="form-group">
                 <label>Tipo de entrega</label>
                 <div class="delivery-toggle">
-                  <button
-                    :class="['delivery-opt', { active: form.tipo === 'domicilio' }]"
-                    @click="form.tipo = 'domicilio'"
-                    type="button"
-                  >🛵 A domicilio</button>
-                  <button
-                    :class="['delivery-opt', { active: form.tipo === 'local' }]"
-                    @click="form.tipo = 'local'"
-                    type="button"
-                  >🏪 Recoger en local</button>
+                  <button :class="['delivery-opt', { active: form.tipo === 'domicilio' }]" @click="form.tipo = 'domicilio'" type="button">🛵 A domicilio</button>
+                  <button :class="['delivery-opt', { active: form.tipo === 'local' }]" @click="form.tipo = 'local'" type="button">🏪 Recoger en local</button>
                 </div>
               </div>
-              <!-- FIX: Solo mostrar dirección si es domicilio -->
               <div v-if="form.tipo === 'domicilio'" class="form-group">
                 <label>Dirección de entrega *</label>
                 <input v-model.trim="form.dir" :class="{ err: errors.dir }" placeholder="Calle, barrio, referencia..." @input="clearErr('dir')" />
@@ -287,12 +292,7 @@
               <div class="form-group">
                 <label>Método de pago *</label>
                 <div class="pago-grid">
-                  <button
-                    v-for="p in pagoOpciones" :key="p.val"
-                    :class="['pago-opt', { active: form.pago === p.val }]"
-                    @click="form.pago = p.val; clearErr('pago')"
-                    type="button"
-                  >{{ p.icon }} {{ p.label }}</button>
+                  <button v-for="p in pagoOpciones" :key="p.val" :class="['pago-opt', { active: form.pago === p.val }]" @click="form.pago = p.val; clearErr('pago')" type="button">{{ p.icon }} {{ p.label }}</button>
                 </div>
                 <span v-if="errors.pago" class="err-msg">{{ errors.pago }}</span>
               </div>
@@ -318,9 +318,7 @@
               <button class="x-btn dark" @click="showCheckout = false">✕</button>
             </div>
             <div class="modal-body invoice-body">
-              <!-- FIX: El div de impresión no tiene overflow ni max-height para que html2canvas lo capture completo -->
               <div id="invoice-print" class="invoice">
-
                 <div class="inv-header">
                   <div class="inv-logo-section">
                     <span class="inv-fire-icon">🔥</span>
@@ -342,10 +340,7 @@
                 </div>
 
                 <div class="inv-section">
-                  <div class="inv-section-title">
-                    <span class="inv-section-icon">👤</span>
-                    DATOS DEL CLIENTE
-                  </div>
+                  <div class="inv-section-title"><span class="inv-section-icon">👤</span>DATOS DEL CLIENTE</div>
                   <div class="inv-client-grid">
                     <div class="inv-field">
                       <span class="inv-field-label">Cliente</span>
@@ -370,12 +365,8 @@
                   </div>
                 </div>
 
-                <!-- FIX: Tabla de productos con cantidades claramente visibles -->
                 <div class="inv-section">
-                  <div class="inv-section-title">
-                    <span class="inv-section-icon">🛒</span>
-                    DETALLE DEL PEDIDO
-                  </div>
+                  <div class="inv-section-title"><span class="inv-section-icon">🛒</span>DETALLE DEL PEDIDO</div>
                   <div class="inv-products-list">
                     <div class="inv-product-header">
                       <span class="iph-name">Producto</span>
@@ -383,22 +374,12 @@
                       <span class="iph-unit">P. Unit.</span>
                       <span class="iph-total">Total</span>
                     </div>
-                    <div
-                      v-for="(item, i) in cart" :key="item.id"
-                      :class="['inv-product-row', { 'inv-row-alt': i % 2 === 1 }]"
-                    >
-                      <span class="ipr-name">
-                        <span class="ipr-emoji">{{ item.emoji }}</span>
-                        {{ item.name }}
-                      </span>
-                      <!-- FIX: Cantidad con fondo sólido y texto blanco para máxima visibilidad -->
-                      <span class="ipr-qty">
-                        <span class="qty-badge-inv">{{ item.qty }}</span>
-                      </span>
+                    <div v-for="(item, i) in cart" :key="item.id" :class="['inv-product-row', { 'inv-row-alt': i % 2 === 1 }]">
+                      <span class="ipr-name"><span class="ipr-emoji">{{ item.emoji }}</span>{{ item.name }}</span>
+                      <span class="ipr-qty"><span class="qty-badge-inv">{{ item.qty }}</span></span>
                       <span class="ipr-unit">${{ fmt(item.price) }}</span>
                       <span class="ipr-total">${{ fmt(item.price * item.qty) }}</span>
                     </div>
-                    <!-- FIX: Fila resumen total de items -->
                     <div class="inv-product-summary">
                       <span class="ips-label">{{ cartCount() }} item(s) en total</span>
                     </div>
@@ -426,10 +407,7 @@
 
                 <div v-if="form.nota" class="inv-notes">
                   <span class="inv-notes-icon">📝</span>
-                  <div>
-                    <strong>Notas del pedido:</strong>
-                    <span>{{ form.nota }}</span>
-                  </div>
+                  <div><strong>Notas del pedido:</strong><span>{{ form.nota }}</span></div>
                 </div>
 
                 <div class="inv-footer-bar">
@@ -463,7 +441,6 @@
     <transition name="modal">
       <div v-if="showAdmin" class="overlay" @click.self="showAdmin = false">
         <div class="admin-modal">
-
           <div class="admin-header">
             <div class="admin-header-left">
               <div class="admin-header-icon">⚙️</div>
@@ -476,27 +453,23 @@
           </div>
 
           <div class="admin-body">
-
             <div class="admin-form-col">
-
               <div class="admin-fieldset">
                 <div class="admin-fieldset-title">📝 Información básica</div>
-
                 <div class="admin-field">
                   <label class="admin-label">Nombre del producto <span class="req">*</span></label>
-                  <input v-model.trim="newProd.name" class="admin-input" placeholder="Ej: Burger Callejera" />
+                  <input v-model.trim="newProd.name" :class="['admin-input', { 'admin-input-err': adminErrors.name }]" placeholder="Ej: Burger Callejera" @input="clearAdminErr('name')" />
+                  <span v-if="adminErrors.name" class="admin-field-err">⚠️ {{ adminErrors.name }}</span>
                 </div>
-
                 <div class="admin-field">
                   <label class="admin-label">Descripción corta <span class="req">*</span></label>
-                  <input v-model.trim="newProd.desc" class="admin-input" placeholder="Ej: Carne 160g, queso, tocineta" />
+                  <input v-model.trim="newProd.desc" :class="['admin-input', { 'admin-input-err': adminErrors.desc }]" placeholder="Ej: Carne 160g, queso, tocineta" @input="clearAdminErr('desc')" />
+                  <span v-if="adminErrors.desc" class="admin-field-err">⚠️ {{ adminErrors.desc }}</span>
                 </div>
-
                 <div class="admin-field">
                   <label class="admin-label">Descripción completa</label>
                   <textarea v-model="newProd.fullDesc" class="admin-textarea" rows="3" placeholder="Describe los ingredientes, el sabor, el acompañamiento..."></textarea>
                 </div>
-
                 <div class="admin-field">
                   <label class="admin-label">URL de imagen</label>
                   <input v-model.trim="newProd.image" class="admin-input" placeholder="https://... (jpg, png, webp)" />
@@ -506,64 +479,51 @@
 
               <div class="admin-fieldset">
                 <div class="admin-fieldset-title">💰 Precio y presentación</div>
-
                 <div class="admin-two-col">
                   <div class="admin-field">
                     <label class="admin-label">Precio (COP) <span class="req">*</span></label>
                     <div class="admin-price-wrap">
                       <span class="admin-price-sym">$</span>
-                      <input v-model.number="newProd.price" type="number" class="admin-input price-padded" placeholder="21900" />
+                      <input v-model.number="newProd.price" type="number" :class="['admin-input', 'price-padded', { 'admin-input-err': adminErrors.price }]" placeholder="21900" @input="clearAdminErr('price')" />
                     </div>
+                    <span v-if="adminErrors.price" class="admin-field-err">⚠️ {{ adminErrors.price }}</span>
                   </div>
                   <div class="admin-field">
                     <label class="admin-label">Emoji <span class="req">*</span></label>
-                    <input v-model="newProd.emoji" class="admin-input emoji-centered" placeholder="🍔" maxlength="4" />
+                    <input v-model="newProd.emoji" :class="['admin-input', 'emoji-centered', { 'admin-input-err': adminErrors.emoji }]" placeholder="🍔" maxlength="4" @input="clearAdminErr('emoji')" />
+                    <span v-if="adminErrors.emoji" class="admin-field-err">⚠️ {{ adminErrors.emoji }}</span>
                   </div>
                 </div>
               </div>
 
               <div class="admin-fieldset">
                 <div class="admin-fieldset-title">🏷️ Clasificación</div>
-
                 <div class="admin-two-col">
                   <div class="admin-field">
                     <label class="admin-label">Categoría <span class="req">*</span></label>
                     <select v-model="newProd.cat" class="admin-select">
-                      <option v-for="c in categories.filter(c=>c.id!=='all')" :key="c.id" :value="c.id">
-                        {{ c.icon }} {{ c.name }}
-                      </option>
+                      <option v-for="c in categories.filter(c=>c.id!=='all')" :key="c.id" :value="c.id">{{ c.icon }} {{ c.name }}</option>
                     </select>
                   </div>
                   <div class="admin-field">
                     <label class="admin-label">¿Destacar producto?</label>
-                    <button
-                      type="button"
-                      :class="['admin-toggle-btn', { 'admin-toggle-on': newProd.popular }]"
-                      @click="newProd.popular = !newProd.popular"
-                    >
-                      <span class="admin-toggle-track">
-                        <span class="admin-toggle-thumb"></span>
-                      </span>
-                      <span class="admin-toggle-text">{{ newProd.popular ? '🔥 Marcado como popular' : 'Producto normal' }}</span>
+                    <button type="button" :class="['admin-toggle-btn', { 'admin-toggle-on': newProd.popular }]" @click="newProd.popular = !newProd.popular">
+                      <span class="admin-toggle-track"><span class="admin-toggle-thumb"></span></span>
+                      <span class="admin-toggle-text">{{ newProd.popular ? '🔥 Popular' : 'Normal' }}</span>
                     </button>
                   </div>
                 </div>
               </div>
 
-              <span v-if="adminError" class="admin-error">⚠️ {{ adminError }}</span>
+              <!-- Error general admin -->
+              <div v-if="adminError" class="admin-error">⚠️ {{ adminError }}</div>
             </div>
 
             <div class="admin-preview-col">
               <div class="admin-preview-title">Vista previa de tarjeta</div>
               <div class="admin-preview-card" v-if="newProd.name">
                 <div class="apc-img">
-                  <img
-                    v-if="newProd.image"
-                    :src="newProd.image"
-                    :alt="newProd.name"
-                    class="apc-photo"
-                    @error="$event.target.style.display='none'"
-                  />
+                  <img v-if="newProd.image" :src="newProd.image" :alt="newProd.name" class="apc-photo" @error="$event.target.style.display='none'" />
                   <span v-else class="apc-emoji">{{ newProd.emoji || '🍔' }}</span>
                   <span v-if="newProd.popular" class="apc-badge">🔥 TOP</span>
                 </div>
@@ -591,14 +551,11 @@
                 </ul>
               </div>
             </div>
-
           </div>
 
           <div class="admin-footer">
             <button class="btn-sec" @click="showAdmin = false">Cancelar</button>
-            <button class="btn-pri admin-save-btn" @click="addProduct">
-              ✅ Agregar al menú
-            </button>
+            <button class="btn-pri admin-save-btn" @click="addProduct">✅ Agregar al menú</button>
           </div>
         </div>
       </div>
@@ -623,6 +580,9 @@
 <script setup>
 import { ref, reactive } from 'vue'
 
+// TOPE MÁXIMO POR PRODUCTO
+const MAX_QTY = 5
+
 const search = ref('')
 const selectedCat = ref('all')
 const showCart = ref(false)
@@ -637,19 +597,13 @@ const detailProduct = ref(null)
 const invoiceNum = ref('')
 const invoiceDate = ref('')
 const adminError = ref('')
+const adminErrors = reactive({})
 
-const form = reactive({
-  nombre: '', apellido: '', tel: '', tipo: 'domicilio',
-  dir: '', pago: '', cambio: '', nota: ''
-})
+const form = reactive({ nombre: '', apellido: '', tel: '', tipo: 'domicilio', dir: '', pago: '', cambio: '', nota: '' })
 const errors = reactive({})
 
-const newProd = reactive({
-  name: '', desc: '', fullDesc: '', price: null,
-  emoji: '', image: '', cat: 'hamburguesas', popular: false
-})
+const newProd = reactive({ name: '', desc: '', fullDesc: '', price: null, emoji: '', image: '', cat: 'hamburguesas', popular: false })
 
-// FIX: Opciones de pago como array para el selector visual
 const pagoOpciones = [
   { val: 'efectivo', icon: '💵', label: 'Efectivo' },
   { val: 'nequi', icon: '📱', label: 'Nequi' },
@@ -668,6 +622,18 @@ const categories = [
   { id: 'bebidas', name: 'Bebidas', icon: '🥤' },
   { id: 'postres', name: 'Postres', icon: '🍨' },
 ]
+
+// Imágenes de Unsplash por categoría para fallback cuando falta imagen
+const catFallbacks = {
+  hamburguesas: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&q=80',
+  perros: 'https://images.unsplash.com/photo-1612392166886-ee8475b03af2?w=400&q=80',
+  pizzas: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&q=80',
+  tacos: 'https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?w=400&q=80',
+  pollo: 'https://images.unsplash.com/photo-1527477396000-e27163b481c2?w=400&q=80',
+  acompa: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=400&q=80',
+  bebidas: 'https://images.unsplash.com/photo-1625772299848-391b6a87d7b3?w=400&q=80',
+  postres: 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=400&q=80',
+}
 
 const products = ref([
   { id: 1, name: 'Calle Bronx', desc: '160g carne res, mozzarella, cheddar', fullDesc: 'Nuestra hamburguesa más callejera: 160g de carne de res a la parrilla jugosa y dorada, queso mozzarella y cheddar fundidos, tocineta ahumada crujiente, cebolla caramelizada dorada, lechuga fresca y tomate. Salsas secretas de la casa. Acompañada de papas a la francesa doradas y crujientes.', highlights: ['Carne 160g a la parrilla', 'Doble queso fundido', 'Tocineta ahumada', 'Papas incluidas'], price: 21900, emoji: '🍔', image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&q=80', cat: 'hamburguesas', popular: true },
@@ -694,27 +660,19 @@ const products = ref([
   { id: 22, name: 'Agua Cristal', desc: 'Agua mineral natural 600ml', fullDesc: 'Agua mineral natural Cristal 600ml, sin gas, refrescante y natural. La opción más saludable y ligera del menú. Siempre fría.', highlights: ['Agua natural sin gas', '600ml', 'Siempre fría', 'La opción saludable'], price: 2500, emoji: '💧', image: 'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=400&q=80', cat: 'bebidas', popular: false },
   { id: 23, name: 'Helado Artesanal', desc: '2 bolas, sabores variados', fullDesc: 'Helado artesanal preparado con ingredientes naturales. Elige 2 bolas generosas de: vainilla, chocolate, arequipe colombiano o fresa natural. Servido en copa o cono.', highlights: ['Ingredientes 100% naturales', '2 bolas generosas', '4 sabores disponibles', 'Copa o cono a elegir'], price: 7900, emoji: '🍨', image: 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=400&q=80', cat: 'postres', popular: false },
   { id: 24, name: 'Brownie Callejero', desc: 'Brownie con helado y chocolate', fullDesc: 'Brownie de chocolate oscuro tibio y húmedo, con una bola generosa de helado de vainilla artesanal derritiéndose encima y salsa de chocolate artesanal. Un pecado delicioso.', highlights: ['Brownie de chocolate oscuro', 'Helado de vainilla artesanal', 'Salsa de chocolate casera', 'Servido tibio'], price: 10900, emoji: '🍫', image: 'https://images.unsplash.com/photo-1564355808539-22fda35bed7e?w=400&q=80', cat: 'postres', popular: true },
-
-  // ── PIZZAS NUEVAS ──────────────────────────────────────────────
-  { id: 25, name: 'Pizza 4 Quesos', desc: 'Mozzarella, gouda, parmesano, azul', fullDesc: 'La favorita de los amantes del queso. Cuatro quesos derretidos en capas sobre base de tomate artesanal: mozzarella cremosa, gouda suave, parmesano recién rallado y un toque de queso azul. Horneada a alta temperatura para bordes crujientes y centro perfectamente fundido.', highlights: ['4 quesos premium', 'Mozzarella + gouda + parmesano + azul', 'Bordes crujientes', 'Horneada al momento'], price: 27900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&q=80', cat: 'pizzas', popular: true },
-  { id: 26, name: 'Pizza BBQ Chicken', desc: 'Pollo, BBQ artesanal, cebolla morada', fullDesc: 'Pechuga de pollo a la parrilla marinada, bañada en nuestra salsa BBQ artesanal de la casa, sobre base de tomate casero. Cebolla morada en tiras, pimentón verde y rojo asado, mozzarella fundida y cilantro fresco al salir del horno. Un clásico americano reinventado.', highlights: ['Pollo marinado a la parrilla', 'BBQ artesanal de la casa', 'Cebolla morada y pimentón asado', 'Cilantro fresco'], price: 25900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?w=400&q=80', cat: 'pizzas', popular: false },
-  { id: 27, name: 'Pizza Hawaiana', desc: 'Jamón, piña, mozzarella, tomate', fullDesc: 'La clásica que divide opiniones y conquista paladares. Jamón ahumado en trozos generosos, piña natural dulce y jugosa, mozzarella derretida a la perfección sobre base de tomate artesanal. Dulce, salada, irresistible. Horneada hasta dorar los bordes perfectamente.', highlights: ['Jamón ahumado en trozos', 'Piña natural dulce', 'Mozzarella dorada', 'Base tomate artesanal'], price: 23900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=400&q=80', cat: 'pizzas', popular: false },
-  { id: 28, name: 'Pizza Carne Molida', desc: 'Carne res, cheddar, jalapeños, tocino', fullDesc: 'Para los carnívoros de corazón. Carne molida de res sazonada con especias colombianas, cheddar fundido abundante, tiras de tocino ahumado crujiente, jalapeños frescos y cebolla caramelizada sobre base de tomate picante. La pizza más contundente del menú.', highlights: ['Carne molida sazonada', 'Cheddar fundido abundante', 'Tocino crujiente', 'Jalapeños frescos'], price: 28900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1571407970349-bc81e7e96d47?w=400&q=80', cat: 'pizzas', popular: true },
-  { id: 29, name: 'Pizza Vegetariana', desc: 'Champiñones, pimentón, espinaca, tomate cherry', fullDesc: 'Fresca, colorida y deliciosa. Champiñones salteados en mantequilla y ajo, pimentón asado tricolor, espinaca fresca, tomates cherry partidos, aceitunas negras y mozzarella fundida sobre base de tomate artesanal con albahaca. Ligera y llena de sabor.', highlights: ['Champiñones salteados en mantequilla', 'Pimentón asado tricolor', 'Tomates cherry frescos', 'Sin carne'], price: 22900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1548369937-47519962c11a?w=400&q=80', cat: 'pizzas', popular: false },
-
-  // ── TACOS NUEVOS ──────────────────────────────────────────────
+  { id: 25, name: 'Pizza 4 Quesos', desc: 'Mozzarella, gouda, parmesano, azul', fullDesc: 'La favorita de los amantes del queso. Cuatro quesos derretidos en capas sobre base de tomate artesanal: mozzarella cremosa, gouda suave, parmesano recién rallado y un toque de queso azul.', highlights: ['4 quesos premium', 'Mozzarella + gouda + parmesano + azul', 'Bordes crujientes', 'Horneada al momento'], price: 27900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&q=80', cat: 'pizzas', popular: true },
+  { id: 26, name: 'Pizza BBQ Chicken', desc: 'Pollo, BBQ artesanal, cebolla morada', fullDesc: 'Pechuga de pollo a la parrilla marinada, bañada en nuestra salsa BBQ artesanal de la casa, sobre base de tomate casero. Cebolla morada en tiras, pimentón verde y rojo asado, mozzarella fundida y cilantro fresco al salir del horno.', highlights: ['Pollo marinado a la parrilla', 'BBQ artesanal de la casa', 'Cebolla morada y pimentón asado', 'Cilantro fresco'], price: 25900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?w=400&q=80', cat: 'pizzas', popular: false },
+  { id: 27, name: 'Pizza Hawaiana', desc: 'Jamón, piña, mozzarella, tomate', fullDesc: 'La clásica que divide opiniones y conquista paladares. Jamón ahumado en trozos generosos, piña natural dulce y jugosa, mozzarella derretida a la perfección sobre base de tomate artesanal.', highlights: ['Jamón ahumado en trozos', 'Piña natural dulce', 'Mozzarella dorada', 'Base tomate artesanal'], price: 23900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=400&q=80', cat: 'pizzas', popular: false },
+  { id: 28, name: 'Pizza Carne Molida', desc: 'Carne res, cheddar, jalapeños, tocino', fullDesc: 'Para los carnívoros de corazón. Carne molida de res sazonada con especias colombianas, cheddar fundido abundante, tiras de tocino ahumado crujiente, jalapeños frescos y cebolla caramelizada sobre base de tomate picante.', highlights: ['Carne molida sazonada', 'Cheddar fundido abundante', 'Tocino crujiente', 'Jalapeños frescos'], price: 28900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1571407970349-bc81e7e96d47?w=400&q=80', cat: 'pizzas', popular: true },
+  { id: 29, name: 'Pizza Vegetariana', desc: 'Champiñones, pimentón, espinaca, tomate cherry', fullDesc: 'Fresca, colorida y deliciosa. Champiñones salteados en mantequilla y ajo, pimentón asado tricolor, espinaca fresca, tomates cherry partidos, aceitunas negras y mozzarella fundida sobre base de tomate artesanal con albahaca.', highlights: ['Champiñones salteados en mantequilla', 'Pimentón asado tricolor', 'Tomates cherry frescos', 'Sin carne'], price: 22900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1548369937-47519962c11a?w=400&q=80', cat: 'pizzas', popular: false },
   { id: 30, name: 'Taco de Carnitas', desc: 'Cerdo desmechado, cebolla, cilantro', fullDesc: 'Cerdo desmechado cocinado lentamente durante horas con especias mexicanas auténticas hasta quedar tierno y jugoso. Sobre tortilla de maíz artesanal tostada, con cebolla blanca picada fina, cilantro fresco, salsa roja casera y un toque de limón. Porción de 3 tacos.', highlights: ['Cerdo desmechado lento', 'Tortilla de maíz artesanal', 'Cebolla y cilantro frescos', 'Salsa roja casera'], price: 19900, emoji: '🌮', image: 'https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?w=400&q=80', cat: 'tacos', popular: true },
   { id: 31, name: 'Taco Camarones', desc: 'Camarones al ajillo, aguacate, pico', fullDesc: 'Camarones frescos al ajillo salteados con mantequilla, ajo y limón hasta quedar dorados y jugosos. Sobre tortilla de harina suave con aguacate cremoso en rebanadas, pico de gallo fresco, repollo morado rallado y salsa sriracha de la casa. Porción de 3 tacos.', highlights: ['Camarones al ajillo frescos', 'Aguacate cremoso', 'Tortilla de harina suave', 'Salsa sriracha casera'], price: 22900, emoji: '🌮', image: 'https://images.unsplash.com/photo-1565299507177-b0ac66763828?w=400&q=80', cat: 'tacos', popular: false },
   { id: 32, name: 'Taco Birria', desc: 'Res estofada, consomé, queso fundido', fullDesc: 'El taco más trendy del momento. Res estofada en chile guajillo y especias hasta deshacerse, dentro de tortilla de maíz empapada en consomé y dorada en comal. Queso manchego fundido, cebolla y cilantro. Se sirve con consomé caliente para remojar. Porción de 3 tacos.', highlights: ['Res en chile guajillo', 'Tortilla en consomé', 'Queso manchego fundido', 'Consomé incluido para remojar'], price: 23900, emoji: '🌮', image: 'https://images.unsplash.com/photo-1624300629298-e9de39c13be5?w=400&q=80', cat: 'tacos', popular: true },
-
-  // ── BEBIDAS NUEVAS ────────────────────────────────────────────
   { id: 33, name: 'Limonada de Coco', desc: 'Limonada fresca con leche de coco', fullDesc: 'Refrescante y tropical. Limonada natural recién exprimida mezclada con leche de coco cremosa, hielo granizado y hojas de menta fresca. Endulzada al gusto con azúcar de caña. La bebida más refrescante del menú, perfecta para el calor de San Gil. Tamaño 500ml.', highlights: ['Limón recién exprimido', 'Leche de coco cremosa', 'Menta fresca', '500ml con hielo granizado'], price: 7900, emoji: '🥥', image: 'https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=400&q=80', cat: 'bebidas', popular: true },
   { id: 34, name: 'Jugo Natural 400ml', desc: 'Mango, maracuyá, lulo o mora', fullDesc: 'Jugos naturales preparados al momento con fruta fresca colombiana. Elige entre mango maduro dulce, maracuyá intenso y ácido, lulo santandereano o mora de castilla. Sin conservantes ni colorantes. Con agua o con leche. El sabor auténtico de Colombia en un vaso.', highlights: ['Fruta fresca al momento', '4 sabores colombianos', 'Sin conservantes', 'Con agua o leche'], price: 5900, emoji: '🧃', image: 'https://images.unsplash.com/photo-1600271886742-f049cd451bba?w=400&q=80', cat: 'bebidas', popular: false },
   { id: 35, name: 'Té Helado Durazno', desc: 'Té negro, durazno natural, limón', fullDesc: 'Té negro preparado en casa, enfriado lentamente y mezclado con pulpa de durazno natural, jugo de limón y menta fresca. Servido con abundante hielo y una rodaja de limón. Ligero, refrescante y nada empalagoso. Una alternativa perfecta a las gaseosas. 400ml.', highlights: ['Té negro casero', 'Pulpa de durazno natural', 'Menta fresca', 'Ligero y sin gas'], price: 5500, emoji: '🍵', image: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=400&q=80', cat: 'bebidas', popular: false },
   { id: 36, name: 'Michelada Callejera', desc: 'Cerveza, limón, salsa negra, chile', fullDesc: 'La bebida callejera por excelencia. Cerveza fría servida en vaso escarchado con limón fresco, salsa negra Worcestershire, salsa de tomate, chile en polvo en el borde y hielo. Picante, ácida y refrescante. La combinación perfecta para acompañar nuestros perros y hamburguesas.', highlights: ['Cerveza bien fría', 'Limón fresco exprimido', 'Salsa Worcestershire', 'Borde con chile'], price: 8900, emoji: '🍺', image: 'https://images.unsplash.com/photo-1618183479302-1e0aa382c36b?w=400&q=80', cat: 'bebidas', popular: true },
   { id: 37, name: 'Smoothie Tropical', desc: 'Mango, piña, maracuyá, leche', fullDesc: 'Smoothie cremoso y espeso preparado al momento con mango maduro, piña fresca, maracuyá ácido y leche entera fría. Sin azúcar añadida porque la fruta lo endulza de manera natural. Rico en vitaminas y sabor. Tamaño grande 500ml. La opción más saludable y sabrosa.', highlights: ['Mango + piña + maracuyá', 'Sin azúcar añadida', 'Leche entera fría', '500ml tamaño grande'], price: 8900, emoji: '🥤', image: 'https://images.unsplash.com/photo-1553530666-ba11a7da3888?w=400&q=80', cat: 'bebidas', popular: false },
-
-  // ── PIZZA EXTRA + TACO EXTRA (para llegar a 40) ───────────────
   { id: 38, name: 'Pizza Mexicana', desc: 'Chorizo, jalapeños, guacamole, queso', fullDesc: 'Fusión perfecta de Italia y México. Chorizo mexicano picante salteado, jalapeños frescos, pimentón rojo, cebolla caramelizada y mozzarella dorada sobre base de tomate especiado con chile. Se sirve con una cucharada de guacamole fresco encima al salir del horno.', highlights: ['Chorizo mexicano picante', 'Jalapeños frescos', 'Guacamole fresco al servir', 'Base tomate especiado'], price: 26900, emoji: '🍕', image: 'https://images.unsplash.com/photo-1534308983496-4fabb1a015ee?w=400&q=80', cat: 'pizzas', popular: false },
   { id: 39, name: 'Taco Veggie', desc: 'Champiñones, aguacate, frijoles, queso', fullDesc: 'La opción vegetariana que no extraña la carne. Champiñones portobello salteados con ajo y hierbas, frijoles negros refritos cremosos, aguacate maduro en rebanadas, queso fresco desmoronado, pico de gallo y crema agria sobre tortilla de maíz artesanal. Porción de 3 tacos.', highlights: ['Champiñones portobello', 'Frijoles negros refritos', 'Aguacate maduro', 'Sin carne'], price: 16900, emoji: '🌮', image: 'https://images.unsplash.com/photo-1543352634-a1c51d9f1fa7?w=400&q=80', cat: 'tacos', popular: false },
   { id: 40, name: 'Limonada de Fresa', desc: 'Fresas naturales, limón, hielo, menta', fullDesc: 'Limonada rosa refrescante y hermosa preparada con fresas frescas colombianas maceradas en azúcar de caña, limón recién exprimido, agua fría y hielo granizado. Decorada con menta fresca y una fresa entera en el borde. La bebida más instagrameable del local. 500ml.', highlights: ['Fresas frescas colombianas', 'Limón recién exprimido', 'Sin colorantes artificiales', '500ml con hielo granizado'], price: 7900, emoji: '🍓', image: 'https://images.unsplash.com/photo-1560508180-03f285f67ded?w=400&q=80', cat: 'bebidas', popular: true },
@@ -745,18 +703,32 @@ function getGroupedProducts() {
   }).filter(g => g.items.length > 0)
 }
 function getQty(id) { return cart.value.find(i => i.id === id)?.qty ?? 0 }
-function getPlaceholderImg(emoji, name) {
-  return `https://via.placeholder.com/400x400/FFF0E0/C8271E?text=${encodeURIComponent(emoji)}`
+
+// IMAGEN FALLBACK: usa imagen por categoría, no placeholder genérico
+function getFallbackImg(product) {
+  return catFallbacks[product.cat] || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&q=80'
 }
 function getEmojiImg(emoji) {
   return `https://via.placeholder.com/60x60/FFF0E0/C8271E?text=${encodeURIComponent(emoji)}`
 }
 function handleImgError(event, product) {
-  event.target.src = getPlaceholderImg(product.emoji, product.name)
+  // Usa fallback por categoría al fallar la imagen principal
+  const fallback = getFallbackImg(product)
+  if (event.target.src !== fallback) {
+    event.target.src = fallback
+  }
 }
+
+// INC con tope de MAX_QTY
 function inc(product) {
   const ex = cart.value.find(i => i.id === product.id)
-  if (ex) { ex.qty++ } else {
+  if (ex) {
+    if (ex.qty >= MAX_QTY) {
+      notify(`⚠️ Máximo ${MAX_QTY} unidades de "${product.name}"`, 'error')
+      return
+    }
+    ex.qty++
+  } else {
     cart.value.push({
       id: product.id, name: product.name, emoji: product.emoji,
       image: product.image, price: product.price, qty: 1
@@ -781,6 +753,7 @@ function goCheckout() {
   showCheckout.value = true
 }
 function clearErr(f) { delete errors[f] }
+function clearAdminErr(f) { delete adminErrors[f] }
 function validateForm() {
   Object.keys(errors).forEach(k => delete errors[k])
   let ok = true
@@ -815,7 +788,7 @@ function resetAll() {
   notify('¡Gracias! Vuelve pronto 🔥', 'success')
 }
 
-// FIX: PDF — temporalmente quitar overflow del modal y capturar el invoice completo
+// PDF MEJORADO: genera imagen completa sin cortes
 async function downloadPDF() {
   notify('Generando PDF...', 'info')
   const loadScript = src => new Promise((res, rej) => {
@@ -830,64 +803,64 @@ async function downloadPDF() {
 
     const el = document.getElementById('invoice-print')
 
-    // FIX: Guardar y quitar estilos que restringen el tamaño durante la captura
-    const modal = document.querySelector('.checkout-modal')
-    const originalModalMaxH = modal ? modal.style.maxHeight : null
-    const originalModalOverflow = modal ? modal.style.overflowY : null
-    const invoiceBody = document.querySelector('.invoice-body')
-    const originalBodyOverflow = invoiceBody ? invoiceBody.style.overflow : null
+    // Clonar el invoice fuera del DOM para captura sin restricciones de overflow
+    const clone = el.cloneNode(true)
+    clone.style.cssText = `
+      position: fixed;
+      top: -99999px;
+      left: 0;
+      width: 700px;
+      background: #ffffff;
+      font-family: sans-serif;
+      z-index: -1;
+    `
+    document.body.appendChild(clone)
+    await new Promise(r => setTimeout(r, 200))
 
-    if (modal) { modal.style.maxHeight = 'none'; modal.style.overflowY = 'visible' }
-    if (invoiceBody) { invoiceBody.style.overflow = 'visible' }
-
-    // Esperar un tick para que el DOM se actualice
-    await new Promise(r => setTimeout(r, 100))
-
-    const canvas = await window.html2canvas(el, {
+    const canvas = await window.html2canvas(clone, {
       scale: 2,
       backgroundColor: '#ffffff',
       useCORS: true,
       logging: false,
-      // FIX: Forzar que capture el elemento completo sin recorte
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: el.scrollWidth,
-      windowHeight: el.scrollHeight,
+      width: clone.offsetWidth,
+      height: clone.scrollHeight,
+      windowWidth: 700,
     })
 
-    // Restaurar estilos originales
-    if (modal) { modal.style.maxHeight = originalModalMaxH; modal.style.overflowY = originalModalOverflow }
-    if (invoiceBody) { invoiceBody.style.overflow = originalBodyOverflow }
+    document.body.removeChild(clone)
 
     const imgData = canvas.toDataURL('image/png')
     const { jsPDF } = window.jspdf
     const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
-    const pageW = pdf.internal.pageSize.getWidth()
-    const pageH = pdf.internal.pageSize.getHeight()
-    const imgW = pageW - 20
+    const pageW = pdf.internal.pageSize.getWidth()   // 210mm
+    const pageH = pdf.internal.pageSize.getHeight()  // 297mm
+    const margin = 10
+    const imgW = pageW - margin * 2
     const imgH = (canvas.height * imgW) / canvas.width
+    const usableH = pageH - margin * 2
 
-    // FIX: Si la imagen es más alta que la página, agregar páginas adicionales
-    if (imgH <= pageH - 20) {
-      pdf.addImage(imgData, 'PNG', 10, 10, imgW, imgH)
+    if (imgH <= usableH) {
+      // Cabe en una sola página
+      pdf.addImage(imgData, 'PNG', margin, margin, imgW, imgH)
     } else {
-      let yOffset = 0
+      // Multipágina: recortar en slices sin cortar filas visualmente
+      const scale = canvas.width / imgW  // px por mm
+      let yMM = 0
       let pageNum = 0
-      while (yOffset < imgH) {
+      while (yMM < imgH) {
         if (pageNum > 0) pdf.addPage()
-        const sliceH = pageH - 20
-        const srcY = (yOffset / imgH) * canvas.height
-        const srcH = Math.min((sliceH / imgH) * canvas.height, canvas.height - srcY)
+        const sliceHmm = Math.min(usableH, imgH - yMM)
+        const srcYpx = Math.round(yMM * scale)
+        const srcHpx = Math.round(sliceHmm * scale)
 
         const sliceCanvas = document.createElement('canvas')
         sliceCanvas.width = canvas.width
-        sliceCanvas.height = srcH
+        sliceCanvas.height = srcHpx
         const ctx = sliceCanvas.getContext('2d')
-        ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH)
-        const sliceData = sliceCanvas.toDataURL('image/png')
-        const sliceImgH = (srcH * imgW) / canvas.width
-        pdf.addImage(sliceData, 'PNG', 10, 10, imgW, sliceImgH)
-        yOffset += sliceH
+        ctx.drawImage(canvas, 0, srcYpx, canvas.width, srcHpx, 0, 0, canvas.width, srcHpx)
+
+        pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', margin, margin, imgW, sliceHmm)
+        yMM += usableH
         pageNum++
       }
     }
@@ -900,12 +873,23 @@ async function downloadPDF() {
   }
 }
 
+// ADMIN: validaciones con errores por campo
 function addProduct() {
   adminError.value = ''
-  if (!newProd.name.trim()) { adminError.value = 'El nombre es obligatorio'; return }
-  if (!newProd.desc.trim()) { adminError.value = 'La descripción es obligatoria'; return }
-  if (!newProd.price || newProd.price <= 0) { adminError.value = 'Ingresa un precio válido'; return }
-  if (!newProd.emoji.trim()) { adminError.value = 'Agrega un emoji para el producto'; return }
+  Object.keys(adminErrors).forEach(k => delete adminErrors[k])
+  let ok = true
+
+  if (!newProd.name.trim()) { adminErrors.name = 'El nombre es obligatorio'; ok = false }
+  if (!newProd.desc.trim()) { adminErrors.desc = 'La descripción es obligatoria'; ok = false }
+  if (!newProd.price || newProd.price <= 0) { adminErrors.price = 'Ingresa un precio válido'; ok = false }
+  if (!newProd.emoji.trim()) { adminErrors.emoji = 'Agrega un emoji para el producto'; ok = false }
+
+  if (!ok) {
+    adminError.value = 'Por favor completa todos los campos obligatorios marcados con *'
+    notify('⚠️ Completa los campos requeridos', 'error')
+    return
+  }
+
   products.value.push({
     id: ++nextId,
     name: newProd.name.trim(),
@@ -935,116 +919,45 @@ function notify(text, type = 'info') {
 </script>
 
 <style scoped>
-/* ═══════ TOKENS — hardcodeados para evitar problema de :root en scoped ═══════ */
-/* FIX: No usar var() para colores críticos en elementos interactivos como qty-btn */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-family: 'Georgia', 'Palatino', serif; background: #FDF6EE; color: #1C1410; scroll-behavior: smooth; }
 #app { min-height: 100vh; display: flex; flex-direction: column; }
 
 /* ═══════ HEADER ═══════ */
 .header {
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  position: sticky; top: 0; z-index: 100;
   background: linear-gradient(135deg, #1C0A05 0%, #2D1008 50%, #1C0A05 100%);
   border-bottom: 4px solid #C8271E;
   box-shadow: 0 4px 30px rgba(200,39,30,.4);
   overflow: visible;
 }
-.header-glow {
-  position: absolute; top: -60px; left: 50%; transform: translateX(-50%);
-  width: 400px; height: 120px;
-  background: radial-gradient(ellipse, rgba(200,39,30,.5) 0%, transparent 70%);
-  pointer-events: none;
-}
-.header-inner {
-  max-width: 1400px; margin: 0 auto; padding: 16px 28px;
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  position: relative; z-index: 1;
-}
+.header-glow { position: absolute; top: -60px; left: 50%; transform: translateX(-50%); width: 400px; height: 120px; background: radial-gradient(ellipse, rgba(200,39,30,.5) 0%, transparent 70%); pointer-events: none; }
+.header-inner { max-width: 1400px; margin: 0 auto; padding: 16px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; position: relative; z-index: 1; }
 .brand { display: flex; align-items: center; gap: 14px; }
 .brand-icon { font-size: 2.2rem; filter: drop-shadow(0 0 12px rgba(255,100,50,.6)); }
 .brand-name { display: block; font-family: 'Georgia', serif; font-size: 1.5rem; font-weight: 900; letter-spacing: 3px; color: #FFFFFF; text-transform: uppercase; line-height: 1.1; text-shadow: 0 0 20px rgba(255,150,50,.5); }
 .brand-tagline { display: block; font-size: .7rem; color: rgba(255,220,180,.7); letter-spacing: 2.5px; text-transform: uppercase; font-family: sans-serif; }
 .header-actions { display: flex; align-items: center; gap: 10px; }
-.admin-toggle {
-  background: rgba(255,255,255,.08); border: 1.5px solid rgba(255,255,255,.2);
-  border-radius: 10px; width: 44px; height: 44px;
-  cursor: pointer; font-size: 1.1rem;
-  display: flex; align-items: center; justify-content: center;
-  transition: all .2s; color: #fff;
-}
+.admin-toggle { background: rgba(255,255,255,.08); border: 1.5px solid rgba(255,255,255,.2); border-radius: 10px; width: 44px; height: 44px; cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: all .2s; color: #fff; }
 .admin-toggle:hover { background: rgba(255,255,255,.16); border-color: #FFD166; }
-
-/* FIX: cart-btn-wrap como contexto de posicionamiento para el badge */
-.cart-btn-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.cart-btn {
-  position: relative;
-  background: linear-gradient(135deg, #C8271E 0%, #A01F17 100%);
-  color: #ffffff;
-  border: 2px solid rgba(255,255,255,.25);
-  border-radius: 10px; padding: 11px 20px; cursor: pointer;
-  font-family: sans-serif; font-size: .82rem; font-weight: 800;
-  letter-spacing: 1.5px; text-transform: uppercase;
-  display: flex; align-items: center; gap: 8px; transition: all .2s;
-  box-shadow: 0 4px 16px rgba(200,39,30,.5);
-}
-/* FIX: Color explícito en los spans del botón */
-.cart-btn .cart-icon,
-.cart-btn .cart-label {
-  color: #ffffff !important;
-  font-size: .82rem;
-}
+.cart-btn-wrap { position: relative; display: inline-flex; }
+.cart-btn { position: relative; background: linear-gradient(135deg, #C8271E 0%, #A01F17 100%); color: #ffffff; border: 2px solid rgba(255,255,255,.25); border-radius: 10px; padding: 11px 20px; cursor: pointer; font-family: sans-serif; font-size: .82rem; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; display: flex; align-items: center; gap: 8px; transition: all .2s; box-shadow: 0 4px 16px rgba(200,39,30,.5); }
+.cart-btn .cart-icon, .cart-btn .cart-label { color: #ffffff !important; font-size: .82rem; }
 .cart-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(200,39,30,.6); }
-
-/* FIX: badge fuera del botón, en el wrap, para z-index correcto */
-.cart-badge {
-  position: absolute; top: -10px; right: -10px;
-  background: #FFD166; color: #1C0A05;
-  width: 26px; height: 26px;
-  border-radius: 50%; font-size: .78rem; font-weight: 900;
-  display: flex; align-items: center; justify-content: center;
-  animation: pulse .9s ease infinite;
-  border: 2.5px solid #1C0A05;
-  font-family: sans-serif;
-  z-index: 10;
-  pointer-events: none;
-}
+.cart-badge { position: absolute; top: -10px; right: -10px; background: #FFD166; color: #1C0A05; width: 26px; height: 26px; border-radius: 50%; font-size: .78rem; font-weight: 900; display: flex; align-items: center; justify-content: center; animation: pulse .9s ease infinite; border: 2.5px solid #1C0A05; font-family: sans-serif; z-index: 10; pointer-events: none; }
 @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.2)} }
 
 /* ═══════ HERO ═══════ */
-.hero {
-  position: relative; overflow: hidden;
-  background: linear-gradient(160deg, #1C0A05 0%, #3D1208 40%, #5C1E0A 70%, #3D1208 100%);
-  padding: 64px 28px 28px;
-}
-.hero-mesh {
-  position: absolute; inset: 0;
-  background: radial-gradient(circle at 20% 50%, rgba(200,39,30,.35) 0%, transparent 50%),
-    radial-gradient(circle at 80% 30%, rgba(245,158,11,.2) 0%, transparent 45%),
-    radial-gradient(circle at 60% 80%, rgba(200,39,30,.2) 0%, transparent 40%);
-  pointer-events: none;
-}
-.hero-dots {
-  position: absolute; inset: 0; opacity: .07;
-  background-image: radial-gradient(circle, rgba(255,220,150,.8) 1px, transparent 1px);
-  background-size: 28px 28px; pointer-events: none;
-}
+.hero { position: relative; overflow: hidden; background: linear-gradient(160deg, #1C0A05 0%, #3D1208 40%, #5C1E0A 70%, #3D1208 100%); padding: 64px 28px 28px; }
+.hero-mesh { position: absolute; inset: 0; background: radial-gradient(circle at 20% 50%, rgba(200,39,30,.35) 0%, transparent 50%), radial-gradient(circle at 80% 30%, rgba(245,158,11,.2) 0%, transparent 45%); pointer-events: none; }
+.hero-dots { position: absolute; inset: 0; opacity: .07; background-image: radial-gradient(circle, rgba(255,220,150,.8) 1px, transparent 1px); background-size: 28px 28px; pointer-events: none; }
 .hero-content { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; }
 .hero-eyebrow { font-size: .82rem; font-weight: 700; color: #FFD166; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 12px; font-family: sans-serif; }
 .hero-title { font-family: 'Georgia', serif; font-size: clamp(2.6rem, 6vw, 5rem); font-weight: 900; line-height: 1.05; color: #FFFFFF; margin-bottom: 16px; text-shadow: 0 4px 30px rgba(0,0,0,.5); }
 .hero-title em { color: #FF4B3E; font-style: italic; text-shadow: 0 0 40px rgba(200,39,30,.6); }
 .hero-sub { font-size: .92rem; color: rgba(255,220,180,.8); font-weight: 600; font-family: sans-serif; margin-bottom: 20px; }
 .hero-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.hero-badge {
-  background: rgba(255,255,255,.1); color: rgba(255,240,220,.9);
-  border: 1px solid rgba(255,200,100,.3); border-radius: 999px;
-  padding: 5px 14px; font-size: .75rem; font-weight: 700; letter-spacing: .5px;
-  font-family: sans-serif; backdrop-filter: blur(4px);
-}
+.hero-badge { background: rgba(255,255,255,.1); color: rgba(255,240,220,.9); border: 1px solid rgba(255,200,100,.3); border-radius: 999px; padding: 5px 14px; font-size: .75rem; font-weight: 700; letter-spacing: .5px; font-family: sans-serif; backdrop-filter: blur(4px); }
 .hero-food-strip { display: flex; gap: 22px; padding: 28px 0 6px; max-width: 1400px; margin: 0 auto; position: relative; z-index: 1; }
 .food-float { font-size: 2.4rem; opacity: .5; filter: drop-shadow(0 4px 8px rgba(0,0,0,.4)); animation: floatY 3s ease-in-out infinite; }
 .food-float:nth-child(even) { animation-delay: .5s; }
@@ -1056,20 +969,12 @@ html { font-family: 'Georgia', 'Palatino', serif; background: #FDF6EE; color: #1
 .control-bar-inner { max-width: 1400px; margin: 0 auto; padding: 14px 28px; display: flex; flex-direction: column; gap: 12px; }
 .search-wrap { position: relative; }
 .search-icon-fixed { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 1rem; pointer-events: none; }
-.search-input {
-  width: 100%; border: 2px solid #E8DDD4; border-radius: 10px;
-  background: #FDF6EE; padding: 11px 16px 11px 46px;
-  font-size: .95rem; font-weight: 600; color: #1C1410; outline: none; transition: all .2s; font-family: sans-serif;
-}
+.search-input { width: 100%; border: 2px solid #E8DDD4; border-radius: 10px; background: #FDF6EE; padding: 11px 16px 11px 46px; font-size: .95rem; font-weight: 600; color: #1C1410; outline: none; transition: all .2s; font-family: sans-serif; }
 .search-input:focus { border-color: #C8271E; background: #fff; box-shadow: 0 0 0 4px rgba(200,39,30,.08); }
 .search-input::placeholder { color: #C4B8B0; }
 .cat-scroll { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
 .cat-scroll::-webkit-scrollbar { display: none; }
-.cat-pill {
-  padding: 7px 16px; white-space: nowrap; border: 2px solid #E8DDD4;
-  border-radius: 999px; background: #FDF6EE; color: #7A6B60;
-  font-size: .8rem; font-weight: 700; letter-spacing: .5px; cursor: pointer; transition: all .18s; font-family: sans-serif;
-}
+.cat-pill { padding: 7px 16px; white-space: nowrap; border: 2px solid #E8DDD4; border-radius: 999px; background: #FDF6EE; color: #7A6B60; font-size: .8rem; font-weight: 700; letter-spacing: .5px; cursor: pointer; transition: all .18s; font-family: sans-serif; }
 .cat-pill:hover { border-color: #C8271E; color: #C8271E; background: #fff; }
 .cat-pill.active { background: #C8271E; border-color: #C8271E; color: #fff; box-shadow: 0 3px 12px rgba(200,39,30,.35); }
 
@@ -1084,94 +989,104 @@ html { font-family: 'Georgia', 'Palatino', serif; background: #FDF6EE; color: #1
 .section-name { font-family: 'Georgia', serif; font-size: 1.15rem; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #1C1410; }
 .section-line { flex: 1; height: 2px; background: linear-gradient(90deg, #E8DDD4 0%, transparent 100%); }
 .section-count { background: linear-gradient(135deg, #C8271E 0%, #A01F17 100%); color: #fff; font-size: .75rem; font-weight: 900; padding: 3px 10px; border-radius: 999px; font-family: sans-serif; }
-.product-grid { display: flex; flex-wrap: wrap; gap: 18px; }
-@media (max-width: 600px) {
-  .product-grid { gap: 12px; }
-  .product-card { max-width: calc((100% - 12px) / 2) !important; }
-}
+
+.product-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+@media (max-width: 1100px) { .product-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 768px) { .product-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
+@media (max-width: 400px) { .product-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; } }
 
 .product-card {
   background: #FFFFFF; border: 2px solid #E8DDD4; border-radius: 16px;
   overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
-  flex: 1 1 200px; max-width: calc((100% - 3 * 18px) / 4);
   transition: transform .25s, box-shadow .25s, border-color .25s;
   animation: fadeUp .45s ease both; box-shadow: 0 2px 12px rgba(0,0,0,.07);
 }
 @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
 .product-card:hover { transform: translateY(-6px); border-color: #C8271E; box-shadow: 0 12px 36px rgba(200,39,30,.2); }
+
 .card-img {
-  aspect-ratio: 1/1; width: 100%; position: relative;
-  border-bottom: 2px solid #E8DDD4; overflow: hidden;
+  /* FIX RESPONSIVE: aspect-ratio fija para que la imagen no aplaste el botón */
+  aspect-ratio: 4/3;
+  width: 100%; position: relative; overflow: hidden;
   background: linear-gradient(145deg, #FFF3E5, #FFE2C0);
+  border-bottom: 2px solid #E8DDD4;
+  flex-shrink: 0;
 }
 .card-photo { width: 100%; height: 100%; object-fit: cover; transition: transform .4s ease; display: block; }
 .product-card:hover .card-photo { transform: scale(1.07); }
-.hot-badge {
-  position: absolute; top: 8px; right: 8px;
-  background: linear-gradient(135deg, #C8271E 0%, #FF4B3E 100%);
-  color: #fff; font-size: .6rem; font-weight: 900;
-  padding: 4px 8px; border-radius: 6px; letter-spacing: .5px;
-  border: 1.5px solid rgba(255,255,255,.5); font-family: sans-serif;
-  box-shadow: 0 2px 8px rgba(200,39,30,.4);
+.hot-badge { position: absolute; top: 8px; right: 8px; background: linear-gradient(135deg, #C8271E 0%, #FF4B3E 100%); color: #fff; font-size: .6rem; font-weight: 900; padding: 4px 8px; border-radius: 6px; letter-spacing: .5px; border: 1.5px solid rgba(255,255,255,.5); font-family: sans-serif; box-shadow: 0 2px 8px rgba(200,39,30,.4); }
+
+.card-body {
+  padding: 10px 12px 12px;
+  flex: 1; display: flex; flex-direction: column;
+  /* FIX: asegura que el footer no se corte */
+  min-height: 0;
 }
-.card-body { padding: 14px; flex: 1; display: flex; flex-direction: column; }
-.card-name { font-family: 'Georgia', serif; font-size: .84rem; font-weight: 900; letter-spacing: .5px; text-transform: uppercase; color: #C8271E; margin-bottom: 5px; line-height: 1.2; }
-.card-desc { font-size: .75rem; color: #7A6B60; line-height: 1.4; flex: 1; margin-bottom: 10px; font-weight: 600; font-family: sans-serif; }
-.card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-top: 10px; border-top: 1.5px solid #E8DDD4; }
-.card-price { font-family: 'Georgia', serif; font-size: 1rem; font-weight: 900; color: #C8271E; }
+.card-name { font-family: 'Georgia', serif; font-size: .78rem; font-weight: 900; letter-spacing: .5px; text-transform: uppercase; color: #C8271E; margin-bottom: 4px; line-height: 1.2; }
+.card-desc {
+  font-size: .7rem; color: #7A6B60; line-height: 1.35; flex: 1;
+  margin-bottom: 8px; font-weight: 600; font-family: sans-serif;
+  /* FIX: truncar en 2 líneas para no empujar el botón */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* FIX CRÍTICO: card-foot siempre visible, nunca oculto */
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1.5px solid #E8DDD4;
+  /* Sin flex-shrink: 0 el footer se comprime; lo fijamos */
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.card-price { font-family: 'Georgia', serif; font-size: .95rem; font-weight: 900; color: #C8271E; white-space: nowrap; }
 .add-btn {
   background: linear-gradient(135deg, #C8271E 0%, #A01F17 100%);
-  color: #ffffff; border: none; border-radius: 10px;
-  padding: 7px 11px; font-size: .72rem; font-weight: 800; letter-spacing: .5px;
+  color: #ffffff; border: none; border-radius: 8px;
+  padding: 6px 10px; font-size: .68rem; font-weight: 800; letter-spacing: .5px;
   cursor: pointer; transition: all .18s; white-space: nowrap; font-family: sans-serif;
   box-shadow: 0 3px 10px rgba(200,39,30,.3);
+  /* FIX: no dejar que el botón se encoja ni desaparezca */
+  flex-shrink: 0;
 }
 .add-btn:hover { transform: scale(1.06); box-shadow: 0 5px 16px rgba(200,39,30,.45); }
 
-/* FIX: qty-row con colores hardcodeados — no usar var() en scoped */
-.qty-row { display: flex; align-items: center; gap: 4px; }
+/* En móvil pequeño, precio arriba y botón abajo full-width */
+@media (max-width: 380px) {
+  .card-foot { flex-direction: column; align-items: stretch; gap: 5px; }
+  .card-price { font-size: .85rem; }
+  .add-btn { width: 100%; text-align: center; padding: 7px; font-size: .72rem; }
+  .qty-row { justify-content: center; }
+}
+
+/* ═══════ QTY ROW ═══════ */
+.qty-row { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .qty-row.lg { gap: 8px; }
 .qty-row.sm { gap: 3px; }
 .qty-btn {
   width: 28px; height: 28px;
-  background: #FDF6EE;
-  border: 2px solid #C8271E;
-  border-radius: 7px;
-  color: #C8271E;
-  font-size: .95rem; font-weight: 900;
+  background: #FDF6EE; border: 2px solid #C8271E; border-radius: 7px;
+  color: #C8271E; font-size: .95rem; font-weight: 900;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all .15s; font-family: sans-serif;
-  line-height: 1;
+  transition: all .15s; font-family: sans-serif; line-height: 1; flex-shrink: 0;
 }
 .qty-btn.lg { width: 38px; height: 38px; font-size: 1.2rem; }
-.qty-btn:hover { background: #C8271E; color: #ffffff; }
-.qty-val {
-  font-family: 'Georgia', serif; font-size: .88rem; font-weight: 900;
-  color: #C8271E; min-width: 20px; text-align: center;
-}
+.qty-btn:hover:not(:disabled) { background: #C8271E; color: #ffffff; }
+/* TOPE: botón + deshabilitado con estilo visual */
+.qty-btn-max { border-color: #E8DDD4 !important; color: #C4B8B0 !important; cursor: not-allowed !important; }
+.qty-btn-max:hover { background: #FDF6EE !important; color: #C4B8B0 !important; }
+.qty-val { font-family: 'Georgia', serif; font-size: .88rem; font-weight: 900; color: #C8271E; min-width: 20px; text-align: center; }
 .qty-val.lg { font-size: 1.1rem; min-width: 28px; }
+.max-qty-msg { font-size: .75rem; color: #C8271E; font-weight: 700; font-family: sans-serif; margin-top: 10px; text-align: center; background: #FFF0EE; border-radius: 6px; padding: 6px 10px; border: 1px solid #F5C0BB; }
 
 /* ═══════ DETAIL MODAL ═══════ */
-.overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 300;
-  display: flex; align-items: center; justify-content: center; padding: 20px;
-  backdrop-filter: blur(3px);
-}
-.detail-card {
-  background: #FFFFFF; border-radius: 16px; border: 2px solid #E8DDD4;
-  width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto;
-  position: relative; animation: popIn .3s cubic-bezier(.34,1.56,.64,1);
-  box-shadow: 0 24px 70px rgba(0,0,0,.4);
-}
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(3px); }
+.detail-card { background: #FFFFFF; border-radius: 16px; border: 2px solid #E8DDD4; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; position: relative; animation: popIn .3s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 24px 70px rgba(0,0,0,.4); }
 @keyframes popIn { from{opacity:0;transform:scale(.86)} to{opacity:1;transform:none} }
-.detail-close {
-  position: absolute; top: 14px; right: 14px; z-index: 10;
-  background: rgba(255,255,255,.95); border: 1.5px solid #E8DDD4;
-  border-radius: 8px; width: 36px; height: 36px;
-  font-size: .9rem; cursor: pointer; color: #7A6B60;
-  display: flex; align-items: center; justify-content: center; transition: all .18s;
-  box-shadow: 0 2px 8px rgba(0,0,0,.15);
-}
+.detail-close { position: absolute; top: 14px; right: 14px; z-index: 10; background: rgba(255,255,255,.95); border: 1.5px solid #E8DDD4; border-radius: 8px; width: 36px; height: 36px; font-size: .9rem; cursor: pointer; color: #7A6B60; display: flex; align-items: center; justify-content: center; transition: all .18s; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
 .detail-close:hover { border-color: #C8271E; color: #C8271E; }
 .detail-img-wrap { position: relative; width: 100%; height: 260px; overflow: hidden; background: linear-gradient(145deg, #FFF3E5, #FFE2C0); }
 .detail-photo { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1191,16 +1106,12 @@ html { font-family: 'Georgia', 'Palatino', serif; background: #FDF6EE; color: #1
 .cta-btn { background: linear-gradient(135deg, #C8271E 0%, #A01F17 100%); color: #fff; border: none; border-radius: 10px; padding: 13px 22px; font-family: sans-serif; font-size: .85rem; letter-spacing: 1px; font-weight: 800; text-transform: uppercase; cursor: pointer; transition: all .2s; box-shadow: 0 4px 14px rgba(200,39,30,.4); white-space: nowrap; }
 .cta-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(200,39,30,.55); }
 
-/* ═══════ CART SIDEBAR ═══════ */
-/* ═══════ CART DROPDOWN ═══════ */
-.cart-backdrop {
-  position: fixed; inset: 0; z-index: 199;
-  background: transparent;
-}
-/* El dropdown cae desde el header sticky (top: 0) */
+/* ═══════ CARRITO FIJO (dropdown desde header sticky) ═══════ */
+.cart-backdrop { position: fixed; inset: 0; z-index: 199; background: transparent; }
 .cart-dropdown {
   position: fixed;
-  top: 76px; /* altura del header */
+  /* El header es sticky y mide ~76px; el dropdown cae exactamente debajo */
+  top: 76px;
   right: 24px;
   width: 380px;
   max-width: calc(100vw - 32px);
@@ -1214,43 +1125,14 @@ html { font-family: 'Georgia', 'Palatino', serif; background: #FDF6EE; color: #1
   box-shadow: 0 20px 60px rgba(0,0,0,.25), 0 4px 16px rgba(200,39,30,.15);
   overflow: hidden;
 }
-/* Triángulo apuntando al botón */
-.cart-dropdown-arrow {
-  position: absolute;
-  top: -10px;
-  right: 44px;
-  width: 20px; height: 20px;
-  background: #1C0A05;
-  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-  z-index: 1;
-}
-.cart-dropdown-head {
-  padding: 16px 20px;
-  border-bottom: 2px solid #E8DDD4;
-  display: flex; align-items: center; justify-content: space-between;
-  background: linear-gradient(135deg, #1C0A05 0%, #2D1008 100%);
-  flex-shrink: 0;
-}
-.cart-dropdown-head h2 {
-  font-family: 'Georgia', serif; font-size: 1rem; font-weight: 900;
-  letter-spacing: 1px; color: #fff;
-}
-.cart-dropdown-body {
-  flex: 1; overflow-y: auto; padding: 12px;
-  scrollbar-width: thin;
-  scrollbar-color: #E8DDD4 transparent;
-}
+.cart-dropdown-arrow { position: absolute; top: -10px; right: 44px; width: 20px; height: 20px; background: #1C0A05; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); z-index: 1; }
+.cart-dropdown-head { padding: 16px 20px; border-bottom: 2px solid #E8DDD4; display: flex; align-items: center; justify-content: space-between; background: linear-gradient(135deg, #1C0A05 0%, #2D1008 100%); flex-shrink: 0; }
+.cart-dropdown-head h2 { font-family: 'Georgia', serif; font-size: 1rem; font-weight: 900; letter-spacing: 1px; color: #fff; }
+.cart-dropdown-body { flex: 1; overflow-y: auto; padding: 12px; scrollbar-width: thin; scrollbar-color: #E8DDD4 transparent; }
 .cart-dropdown-body::-webkit-scrollbar { width: 4px; }
 .cart-dropdown-body::-webkit-scrollbar-track { background: transparent; }
 .cart-dropdown-body::-webkit-scrollbar-thumb { background: #E8DDD4; border-radius: 4px; }
-.cart-dropdown-foot {
-  padding: 14px 18px;
-  border-top: 2px solid #E8DDD4;
-  background: #FDF6EE;
-  flex-shrink: 0;
-}
-
-/* Elementos del carrito (compartidos) */
+.cart-dropdown-foot { padding: 14px 18px; border-top: 2px solid #E8DDD4; background: #FDF6EE; flex-shrink: 0; }
 .empty-cart { text-align: center; padding: 40px 20px; }
 .empty-emoji { font-size: 3.5rem; margin-bottom: 12px; }
 .empty-msg { font-family: 'Georgia', serif; font-size: .95rem; color: #7A6B60; font-weight: 900; letter-spacing: 1px; }
@@ -1276,42 +1158,25 @@ html { font-family: 'Georgia', 'Palatino', serif; background: #FDF6EE; color: #1
 .modal-head { background: linear-gradient(135deg, #1C0A05 0%, #2D1008 100%); color: #fff; padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; border-radius: 14px 14px 0 0; }
 .modal-head h2 { font-family: 'Georgia', serif; font-size: 1.1rem; font-weight: 900; letter-spacing: 1px; margin: 0; }
 .modal-body { padding: 22px; }
-.invoice-body { padding: 22px; background: #F9F3EE; }
+.invoice-body { padding: 22px; background: #F9F3EE; overflow: visible; }
 .modal-foot { padding: 0 22px 22px; display: flex; gap: 10px; flex-wrap: wrap; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } }
 .form-group { margin-bottom: 14px; }
 .form-group label { display: block; font-size: .72rem; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #C8271E; margin-bottom: 6px; font-family: sans-serif; }
-.form-group input, .form-group textarea {
-  width: 100%; border: 2px solid #E8DDD4; border-radius: 10px;
-  background: #FDF6EE; padding: 10px 13px; font-size: .92rem; font-weight: 600;
-  color: #1C1410; outline: none; transition: all .2s; font-family: sans-serif;
-}
+.form-group input, .form-group textarea { width: 100%; border: 2px solid #E8DDD4; border-radius: 10px; background: #FDF6EE; padding: 10px 13px; font-size: .92rem; font-weight: 600; color: #1C1410; outline: none; transition: all .2s; font-family: sans-serif; }
 .form-group input:focus, .form-group textarea:focus { border-color: #C8271E; background: #fff; box-shadow: 0 0 0 4px rgba(200,39,30,.08); }
 .form-group input.err { border-color: #dc2626; background: #fef2f2; }
 .err-msg { font-size: .74rem; color: #dc2626; font-weight: 800; margin-top: 4px; display: block; font-family: sans-serif; }
 textarea { resize: vertical; min-height: 72px; }
-
-/* FIX: Toggle de entrega visual */
 .delivery-toggle { display: flex; gap: 8px; }
-.delivery-opt {
-  flex: 1; padding: 10px 8px; border: 2px solid #E8DDD4; border-radius: 10px;
-  background: #FDF6EE; color: #7A6B60; font-family: sans-serif; font-size: .82rem;
-  font-weight: 700; cursor: pointer; transition: all .18s; text-align: center;
-}
+.delivery-opt { flex: 1; padding: 10px 8px; border: 2px solid #E8DDD4; border-radius: 10px; background: #FDF6EE; color: #7A6B60; font-family: sans-serif; font-size: .82rem; font-weight: 700; cursor: pointer; transition: all .18s; text-align: center; }
 .delivery-opt:hover { border-color: #C8271E; color: #C8271E; }
 .delivery-opt.active { background: #C8271E; border-color: #C8271E; color: #ffffff; font-weight: 900; }
-
-/* FIX: Grid de opciones de pago */
 .pago-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.pago-opt {
-  padding: 10px 8px; border: 2px solid #E8DDD4; border-radius: 10px;
-  background: #FDF6EE; color: #7A6B60; font-family: sans-serif; font-size: .82rem;
-  font-weight: 700; cursor: pointer; transition: all .18s; text-align: center;
-}
+.pago-opt { padding: 10px 8px; border: 2px solid #E8DDD4; border-radius: 10px; background: #FDF6EE; color: #7A6B60; font-family: sans-serif; font-size: .82rem; font-weight: 700; cursor: pointer; transition: all .18s; text-align: center; }
 .pago-opt:hover { border-color: #C8271E; color: #C8271E; }
 .pago-opt.active { background: #C8271E; border-color: #C8271E; color: #ffffff; font-weight: 900; }
-
 .btn-sec { flex: 1; background: #FDF6EE; border: 2px solid #E8DDD4; border-radius: 10px; padding: 12px; font-family: sans-serif; font-size: .8rem; font-weight: 800; letter-spacing: 1px; color: #7A6B60; cursor: pointer; transition: all .2s; text-transform: uppercase; }
 .btn-sec:hover { border-color: #C8271E; color: #C8271E; }
 .btn-pri { flex: 2; background: linear-gradient(135deg, #C8271E 0%, #A01F17 100%); color: #fff; border: none; border-radius: 10px; padding: 12px; font-family: sans-serif; font-size: .8rem; font-weight: 800; letter-spacing: 1px; cursor: pointer; transition: all .2s; text-transform: uppercase; box-shadow: 0 4px 14px rgba(200,39,30,.35); }
@@ -1339,8 +1204,6 @@ textarea { resize: vertical; min-height: 72px; }
 .inv-field-full { grid-column: span 2; }
 .inv-field-label { font-size: .64rem; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #9A7A60; font-family: sans-serif; }
 .inv-field-value { font-size: .88rem; font-weight: 700; color: #1C1410; font-family: sans-serif; line-height: 1.3; }
-
-/* FIX: Tabla de productos con cantidades más visibles */
 .inv-product-header { display: grid; grid-template-columns: 1fr 56px 90px 90px; background: #1C0A05; padding: 8px 16px; font-size: .64rem; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(255,210,150,.85); font-family: sans-serif; }
 .iph-qty, .iph-unit, .iph-total { text-align: center; }
 .iph-total { text-align: right; }
@@ -1349,30 +1212,11 @@ textarea { resize: vertical; min-height: 72px; }
 .ipr-name { display: flex; align-items: center; gap: 7px; font-size: .85rem; font-weight: 700; color: #1C1410; font-family: sans-serif; }
 .ipr-emoji { font-size: 1.1rem; }
 .ipr-qty { text-align: center; display: flex; justify-content: center; }
-/* FIX: badge de cantidad con fondo sólido rojo para máxima legibilidad */
-.qty-badge-inv {
-  display: inline-flex; align-items: center; justify-content: center;
-  background: #C8271E; color: #ffffff;
-  border-radius: 999px; padding: 3px 12px;
-  font-size: .82rem; font-weight: 900; font-family: sans-serif;
-  min-width: 32px; border: 2px solid #ffffff;
-  box-shadow: 0 1px 4px rgba(200,39,30,.3);
-}
+.qty-badge-inv { display: inline-flex; align-items: center; justify-content: center; background: #C8271E; color: #ffffff; border-radius: 999px; padding: 3px 12px; font-size: .82rem; font-weight: 900; font-family: sans-serif; min-width: 32px; border: 2px solid #ffffff; box-shadow: 0 1px 4px rgba(200,39,30,.3); }
 .ipr-unit { text-align: center; font-size: .82rem; color: #6A5040; font-weight: 600; font-family: sans-serif; }
 .ipr-total { text-align: right; font-size: .9rem; font-weight: 900; color: #1C1410; font-family: 'Georgia', serif; }
-
-/* FIX: Fila de resumen debajo de productos */
-.inv-product-summary {
-  padding: 8px 16px;
-  background: #F5EDE0;
-  border-bottom: 1.5px solid #EAE0D5;
-  text-align: right;
-}
-.ips-label {
-  font-size: .75rem; font-weight: 800; color: #8B5C30;
-  font-family: sans-serif; letter-spacing: .5px;
-}
-
+.inv-product-summary { padding: 8px 16px; background: #F5EDE0; border-bottom: 1.5px solid #EAE0D5; text-align: right; }
+.ips-label { font-size: .75rem; font-weight: 800; color: #8B5C30; font-family: sans-serif; letter-spacing: .5px; }
 .inv-totals-section { padding: 16px 20px; background: #FFFCF8; border-bottom: 1.5px solid #EAE0D5; }
 .inv-total-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
 .itr-label { font-size: .87rem; color: #6A5040; font-weight: 700; font-family: sans-serif; }
@@ -1416,6 +1260,9 @@ textarea { resize: vertical; min-height: 72px; }
 .admin-input { width: 100%; border: 1.5px solid #D5C8C0; border-radius: 8px; background: #FDFAF8; padding: 10px 14px; font-size: .9rem; font-weight: 600; color: #1C1410; outline: none; transition: all .2s; font-family: sans-serif; }
 .admin-input:focus { border-color: #C8271E; background: #fff; box-shadow: 0 0 0 3px rgba(200,39,30,.1); }
 .admin-input::placeholder { color: #B8A9A0; font-weight: 500; }
+/* FIX: estilo de error por campo en admin */
+.admin-input-err { border-color: #dc2626 !important; background: #fef2f2 !important; }
+.admin-field-err { display: block; font-size: .72rem; color: #dc2626; font-weight: 800; margin-top: 5px; font-family: sans-serif; }
 .admin-textarea { width: 100%; border: 1.5px solid #D5C8C0; border-radius: 8px; background: #FDFAF8; padding: 10px 14px; font-size: .9rem; font-weight: 600; color: #1C1410; outline: none; transition: all .2s; font-family: sans-serif; resize: vertical; min-height: 90px; }
 .admin-textarea:focus { border-color: #C8271E; background: #fff; box-shadow: 0 0 0 3px rgba(200,39,30,.1); }
 .admin-textarea::placeholder { color: #B8A9A0; font-weight: 500; }
@@ -1502,7 +1349,7 @@ textarea { resize: vertical; min-height: 72px; }
 .toast-enter-from { opacity: 0; transform: translateX(60px); }
 .toast-leave-to { opacity: 0; transform: translateX(60px); }
 
-/* ═══════ RESPONSIVE ═══════ */
+/* ═══════ RESPONSIVE DETALLE ═══════ */
 @media (max-width: 768px) {
   .cart-dropdown { width: calc(100vw - 16px); right: 8px; top: 72px; }
   .cart-label { display: none; }
@@ -1510,7 +1357,6 @@ textarea { resize: vertical; min-height: 72px; }
   .hero-title { font-size: 2.5rem; }
   .modal-foot { flex-wrap: wrap; }
   .btn-pdf { flex: 1 0 100%; }
-  .product-card { max-width: calc((100% - 18px) / 2) !important; }
   .detail-highlights { grid-template-columns: 1fr; }
   .inv-client-grid { grid-template-columns: 1fr; }
   .inv-field-full { grid-column: span 1; }
